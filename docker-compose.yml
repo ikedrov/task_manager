@@ -1,0 +1,76 @@
+version: '3.7'
+services:
+  db:
+    image: postgres:15
+    container_name: task_manager_db
+    env_file:
+      - .env-non-dev
+    ports:
+      - 5433:5432
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7
+    container_name: task_manager_redis
+  task_manager:
+    build:
+      context: .
+    container_name: task_manager_app
+    env_file:
+      - .env-non-dev
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["/task_manager/docker/app.sh"]
+    ports:
+      - 9000:8000
+  celery:
+    image: task_manager_celery
+    build:
+      context: .
+    container_name: task_manager_celery
+    command: [ "/task_manager/docker/celery.sh", "celery" ]
+#    command: sh -c "celery --app=app.tasks.cel:celery_app worker -l INFO"
+    env_file:
+      - .env-non-dev
+    depends_on:
+      - redis
+  flower:
+    image: task_manager_flower
+    build:
+      context: .
+    container_name: task_manager_flower
+    command: [ "/task_manager/docker/celery.sh", "flower" ]
+#    command: sh -c "celery --app=app.tasks.cel:celery_app flower"
+    env_file:
+      - .env-non-dev
+    depends_on:
+      - redis
+  prometheus:
+    image: prom/prometheus:v2.43.0
+    container_name: prometheus_task
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata:/prometheus
+    restart: unless-stopped
+    ports:
+      - 9090:9090
+
+  grafana:
+    image: grafana/grafana:9.4.7
+    container_name: grafana_task
+    volumes:
+      - grafanadata:/var/lib/grafana
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+
+volumes:
+  postgresdata:
+  grafanadata:
+  prometheusdata:
